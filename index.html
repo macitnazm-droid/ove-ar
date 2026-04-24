@@ -1,189 +1,261 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,viewport-fit=cover">
-<title>Ove AR Nail Try-On</title>
+<title>Ove Nail Try-On</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#000;-webkit-user-select:none}
-#cam{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover}
-#overlay{position:absolute;top:0;left:0;width:100%;height:100%}
-#segCanvas{display:none}
-#status{position:absolute;top:env(safe-area-inset-top,40px);left:0;right:0;text-align:center;color:#fff;font:600 14px/1.4 -apple-system,sans-serif;z-index:10;text-shadow:0 1px 4px rgba(0,0,0,0.7);padding-top:10px}
-#flip{position:absolute;top:env(safe-area-inset-top,40px);right:16px;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,0.5);border:none;color:#fff;font-size:18px;z-index:20;padding-top:10px}
+body{font-family:-apple-system,sans-serif;background:#FAFAF8;color:#2C2422;min-height:100vh}
+#YMK-module{width:100%;max-width:500px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;padding-top:env(safe-area-inset-top,12px)}
+.header h1{font-size:18px;font-weight:700;flex:1;text-align:center}
+.colors{padding:12px 16px;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+.color-btn{display:inline-block;width:36px;height:36px;border-radius:18px;border:2px solid #EAD9D4;margin:0 4px;cursor:pointer;vertical-align:middle}
+.color-btn.active{border:3px solid #2C2422;transform:scale(1.15)}
+.textures{padding:8px 16px;overflow-x:auto;white-space:nowrap}
+.tex-btn{display:inline-block;padding:6px 14px;border-radius:16px;background:#F5EAE5;color:#6E6B68;font-size:12px;margin:0 3px;cursor:pointer;border:none}
+.tex-btn.active{background:#C4A49A;color:#fff}
+.capture-btn{display:block;margin:16px auto;padding:14px 32px;background:#3A3230;color:#fff;border:none;border-radius:28px;font-size:16px;font-weight:600;cursor:pointer}
+.result-img{width:100%;max-width:400px;display:block;margin:12px auto;border-radius:16px}
+.status{text-align:center;padding:20px;color:#6E6B68;font-size:14px}
+.loading{text-align:center;padding:40px;color:#C4A49A;font-size:16px;font-weight:600}
+.retry-btn{display:block;margin:8px auto;padding:10px 24px;background:#F5EAE5;color:#C4A49A;border:none;border-radius:20px;font-size:14px;cursor:pointer}
+.book-btn{display:block;margin:16px auto;padding:14px 32px;background:#3A3230;color:#fff;border:none;border-radius:28px;font-size:16px;font-weight:600;cursor:pointer}
 </style>
 </head>
 <body>
-<video id="cam" autoplay playsinline muted></video>
-<canvas id="overlay"></canvas>
-<canvas id="segCanvas"></canvas>
-<div id="status">Yukleniyor...</div>
-<button id="flip" onclick="flipCam()">🔄</button>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"></script>
+<div class="header">
+  <h1>Nail Try-On</h1>
+</div>
+
+<!-- Renk paleti -->
+<div class="colors" id="colorPicker"></div>
+
+<!-- Doku secici -->
+<div class="textures" id="texturePicker"></div>
+
+<!-- Camera Kit mount point -->
+<div id="YMK-module"></div>
+
+<!-- Sonuc -->
+<div id="result"></div>
+
+<!-- Kamera ac butonu -->
+<button class="capture-btn" id="openBtn" onclick="openCamera()">Kamerayi Ac</button>
+
 <script>
-const cam = document.getElementById('cam');
-const canvas = document.getElementById('overlay');
-const ctx = canvas.getContext('2d');
-const segCanvas = document.getElementById('segCanvas');
-const segCtx = segCanvas.getContext('2d');
-const statusEl = document.getElementById('status');
+const API_KEY = 'sk-GPSJTU66g_xl7fvLeWKfnchi-PJFiyKemy7nT-h52MvH6BPzdWMF6R-8tKzrDlbx';
+const API_BASE = 'https://yce-api-01.makeupar.com/s2s/v2.0';
 
-let currentColor = '#D4547A';
-let facingMode = 'environment';
-let hands, camera;
-
-// Rengi RGB'ye cevir
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1,3), 16);
-  const g = parseInt(hex.slice(3,5), 16);
-  const b = parseInt(hex.slice(5,7), 16);
-  return [r, g, b];
-}
-
-const NAILS = [
-  {tip:4,dip:3,pip:2},
-  {tip:8,dip:7,pip:6},
-  {tip:12,dip:11,pip:10},
-  {tip:16,dip:15,pip:14},
-  {tip:20,dip:19,pip:18},
+const COLORS = [
+  {id:'rose',label:'Rose Gold',hex:'#D4547A'},
+  {id:'red',label:'Kirmizi',hex:'#CC0000'},
+  {id:'nude',label:'Nude',hex:'#E8C5B0'},
+  {id:'blush',label:'Blush',hex:'#F2C4CE'},
+  {id:'berry',label:'Berry',hex:'#8B2252'},
+  {id:'wine',label:'Bordo',hex:'#722F37'},
+  {id:'coral',label:'Mercan',hex:'#FF6B6B'},
+  {id:'pink',label:'Hot Pink',hex:'#FF69B4'},
+  {id:'lavender',label:'Lavanta',hex:'#E6CDFF'},
+  {id:'mint',label:'Nane',hex:'#98D8C8'},
+  {id:'gold',label:'Altin',hex:'#C9A84C'},
+  {id:'black',label:'Siyah',hex:'#2D2D2D'},
+  {id:'white',label:'Beyaz',hex:'#F8F8F8'},
+  {id:'sky',label:'Mavi',hex:'#87CEEB'},
 ];
 
-async function init() {
-  statusEl.textContent = 'AI modeli yukleniyor...';
-  
-  hands = new Hands({locateFile: f => 
-    'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + f
+const TEXTURES = [
+  {id:'cream',label:'Krem'},
+  {id:'matte',label:'Mat'},
+  {id:'metallic',label:'Metalik'},
+  {id:'shimmer_fine',label:'Simli'},
+  {id:'pearl',label:'Inci'},
+];
+
+let selectedColor = COLORS[0];
+let selectedTexture = TEXTURES[0];
+
+// Renk palette render
+const colorDiv = document.getElementById('colorPicker');
+COLORS.forEach(c => {
+  const btn = document.createElement('span');
+  btn.className = 'color-btn' + (c.id === selectedColor.id ? ' active' : '');
+  btn.style.backgroundColor = c.hex;
+  btn.onclick = () => {
+    selectedColor = c;
+    document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // RN'e bildir
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'colorChanged',hex:c.hex,label:c.label}));
+  };
+  colorDiv.appendChild(btn);
+});
+
+// Doku render
+const texDiv = document.getElementById('texturePicker');
+TEXTURES.forEach(t => {
+  const btn = document.createElement('button');
+  btn.className = 'tex-btn' + (t.id === selectedTexture.id ? ' active' : '');
+  btn.textContent = t.label;
+  btn.onclick = () => {
+    selectedTexture = t;
+    document.querySelectorAll('.tex-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  };
+  texDiv.appendChild(btn);
+});
+
+// Camera Kit init
+window.YMKAsyncInit = function() {
+  YMK.addEventListener('loaded', function() {
+    console.log('Camera Kit loaded');
   });
-  hands.setOptions({
-    maxNumHands: 2,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.6,
-    minTrackingConfidence: 0.5,
+
+  YMK.addEventListener('faceDetectionCaptured', function(capturedResult) {
+    YMK.close();
+    document.getElementById('openBtn').style.display = 'block';
+    
+    if (capturedResult.images && capturedResult.images.length > 0) {
+      const imgData = capturedResult.images[0].image;
+      processNail(imgData);
+    }
   });
-  hands.onResults(onResults);
+
+  YMK.addEventListener('cameraFailed', function(err) {
+    document.getElementById('result').innerHTML = '<p class="status">Kamera erisimi reddedildi</p>';
+    document.getElementById('openBtn').style.display = 'block';
+  });
+};
+
+function openCamera() {
+  document.getElementById('openBtn').style.display = 'none';
+  document.getElementById('result').innerHTML = '';
   
-  statusEl.textContent = 'Kamera aciliyor...';
-  startCamera();
+  YMK.init({
+    faceDetectionMode: 'nail',
+    imageFormat: 'base64',
+    language: 'enu',
+    hideFlipCameraButton: false,
+  });
+  YMK.openCameraKit();
 }
 
-function startCamera() {
-  if (camera) camera.stop();
-  camera = new Camera(cam, {
-    onFrame: async () => { await hands.send({image: cam}); },
-    facingMode: facingMode,
-    width: 640, height: 480,
-  });
-  camera.start().then(() => {
-    canvas.width = cam.videoWidth || 640;
-    canvas.height = cam.videoHeight || 480;
-    segCanvas.width = canvas.width;
-    segCanvas.height = canvas.height;
-    statusEl.textContent = '';
-  }).catch(() => {
-    statusEl.textContent = 'Kamera erisimi reddedildi';
-  });
-}
+async function processNail(base64Image) {
+  const resultDiv = document.getElementById('result');
+  resultDiv.innerHTML = '<p class="loading">AI tirnaklarini boyuyor...</p>';
 
-function flipCam() {
-  facingMode = facingMode === 'user' ? 'environment' : 'user';
-  startCamera();
-}
+  try {
+    // base64'ten data URI prefix'ini kaldir
+    const raw = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    
+    // Blob olustur ve upload et
+    const byteChars = atob(raw);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArray], {type: 'image/jpeg'});
 
-function onResults(results) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-    statusEl.textContent = 'Elini kameraya goster';
-    return;
-  }
-  
-  statusEl.textContent = '';
-  
-  // Kamera frame'ini segCanvas'a ciz
-  segCtx.drawImage(cam, 0, 0, canvas.width, canvas.height);
-  const frame = segCtx.getImageData(0, 0, canvas.width, canvas.height);
-  const pixels = frame.data;
-  const [cr, cg, cb] = hexToRgb(currentColor);
-  
-  for (const landmarks of results.multiHandLandmarks) {
-    for (const nail of NAILS) {
-      const tip = landmarks[nail.tip];
-      const dip = landmarks[nail.dip];
-      
-      const tx = tip.x * canvas.width, ty = tip.y * canvas.height;
-      const dx = dip.x * canvas.width, dy = dip.y * canvas.height;
-      
-      const segLen = Math.sqrt((tx-dx)**2 + (ty-dy)**2);
-      const nailW = segLen * 0.45;
-      const nailH = segLen * 0.55;
-      
-      const cx = dx + (tx - dx) * 0.5;
-      const cy = dy + (ty - dy) * 0.5;
-      const angle = Math.atan2(ty - dy, tx - dx) - Math.PI/2;
-      
-      // Tirnak bolgesindeki pikselleri tara
-      const cosA = Math.cos(-angle), sinA = Math.sin(-angle);
-      const searchR = Math.max(nailW, nailH);
-      
-      const minX = Math.max(0, Math.floor(cx - searchR));
-      const maxX = Math.min(canvas.width-1, Math.ceil(cx + searchR));
-      const minY = Math.max(0, Math.floor(cy - searchR));
-      const maxY = Math.min(canvas.height-1, Math.ceil(cy + searchR));
-      
-      for (let y = minY; y <= maxY; y++) {
-        for (let x = minX; x <= maxX; x++) {
-          // Pikseli tirnak koordinat sistemine donustur
-          const lx = (x - cx) * cosA - (y - cy) * sinA;
-          const ly = (x - cx) * sinA + (y - cy) * cosA;
-          
-          // Elips ici mi kontrol
-          const ex = (lx / (nailW/2)) ** 2;
-          const ey = (ly / (nailH/2)) ** 2;
-          
-          if (ex + ey <= 1.0) {
-            const idx = (y * canvas.width + x) * 4;
-            const origR = pixels[idx];
-            const origG = pixels[idx+1];
-            const origB = pixels[idx+2];
-            
-            // Luminance koru — orijinal parlakligi al
-            const lum = (origR * 0.299 + origG * 0.587 + origB * 0.114) / 255;
-            
-            // Kenardan merkeze gecis (feather)
-            const dist = Math.sqrt(ex + ey);
-            const alpha = dist > 0.75 ? 1.0 - (dist - 0.75) / 0.25 : 1.0;
-            const blend = 0.65 * alpha; // %65 renk, %35 orijinal
-            
-            // Renk karistir — luminance-preserving blend
-            const finalR = Math.round(origR * (1 - blend) + cr * lum * blend + cr * 0.3 * blend);
-            const finalG = Math.round(origG * (1 - blend) + cg * lum * blend + cg * 0.3 * blend);
-            const finalB = Math.round(origB * (1 - blend) + cb * lum * blend + cb * 0.3 * blend);
-            
-            pixels[idx] = Math.min(255, finalR);
-            pixels[idx+1] = Math.min(255, finalG);
-            pixels[idx+2] = Math.min(255, finalB);
-          }
+    // 1. Upload
+    const uploadRes = await fetch(API_BASE + '/file/nail-vto', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + API_KEY,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: blob,
+    });
+    const uploadData = await uploadRes.json();
+    if (!uploadData?.data?.file_id) throw new Error('Yukleme basarisiz');
+
+    // 2. Task olustur
+    const fingers = ['thumb','index','middle','ring','pinky'];
+    const effects = fingers.map(f => ({
+      sub_type: 'color',
+      finger: f,
+      color: selectedColor.hex,
+      texture: selectedTexture.id,
+      transparency: 0,
+      reflection: 20,
+      contrast: 10,
+      roughness: 0,
+    }));
+
+    const taskRes = await fetch(API_BASE + '/task/nail-vto', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        version: '1.0',
+        src_file_id: uploadData.data.file_id,
+        effect_type: 'nail_polish',
+        ref_file_ids: [],
+        effects: effects,
+      }),
+    });
+    const taskData = await taskRes.json();
+    if (!taskData?.data?.task_id) throw new Error('Task olusturulamadi');
+
+    // 3. Poll
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const statusRes = await fetch(API_BASE + '/task/nail-vto/' + taskData.data.task_id, {
+        headers: {'Authorization': 'Bearer ' + API_KEY},
+      });
+      const statusData = await statusRes.json();
+
+      if (statusData?.data?.task_status === 'success') {
+        resultDiv.innerHTML = 
+          '<img class="result-img" src="' + statusData.data.results.url + '" />' +
+          '<button class="retry-btn" onclick="openCamera()">Tekrar Dene</button>' +
+          '<button class="book-btn" onclick="bookNow()">Bu Rengi Al &rarr;</button>';
+        
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({type:'result',url:statusData.data.results.url}));
         }
+        return;
+      }
+
+      if (statusData?.data?.task_status === 'fail') {
+        throw new Error(statusData.data.error || 'El tespit edilemedi');
       }
     }
+    throw new Error('Zaman asimi');
+
+  } catch(e) {
+    resultDiv.innerHTML = 
+      '<p class="status">' + (e.message || 'Bir hata olustu') + '</p>' +
+      '<button class="retry-btn" onclick="openCamera()">Tekrar Dene</button>';
   }
-  
-  ctx.putImageData(frame, 0, 0);
 }
 
-window.addEventListener('message', e => {
-  try { const d = JSON.parse(e.data); if (d.type === 'setColor') currentColor = d.hex; } catch {}
-});
-document.addEventListener('message', e => {
-  try { const d = JSON.parse(e.data); if (d.type === 'setColor') currentColor = d.hex; } catch {}
-});
+function bookNow() {
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'book'}));
+  }
+}
 
-init();
+// RN'den renk degisikligi al
+window.addEventListener('message', e => {
+  try {
+    const d = JSON.parse(e.data);
+    if (d.type === 'setColor') {
+      const c = COLORS.find(x => x.hex === d.hex);
+      if (c) {
+        selectedColor = c;
+        document.querySelectorAll('.color-btn').forEach((b,i) => {
+          b.classList.toggle('active', COLORS[i].id === c.id);
+        });
+      }
+    }
+  } catch {}
+});
 </script>
+
+<!-- YouCam Camera Kit SDK -->
+<script src="https://plugins-media.makeupar.com/v2.4-camera-kit/sdk.js"></script>
+
 </body>
 </html>
