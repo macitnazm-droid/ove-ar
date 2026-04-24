@@ -64,8 +64,8 @@ body{font-family:-apple-system,sans-serif;background:#1C1A19;color:#fff;min-heig
 <div id="result-view" style="display:none"></div>
 
 <script>
-const API_KEY = 'sk-GPSJTU66g_xl7fvLeWKfnchi-PJFiyKemy7nT-h52MvH6BPzdWMF6R-8tKzrDlbx';
-const API = 'https://yce-api-01.makeupar.com/s2s/v2.0';
+// API artik edge function uzerinden
+const EDGE_FN = "https://aglbhawwzsappcwstrdq.supabase.co/functions/v1/nail-tryon";
 
 const COLORS = [
   {id:'rose',hex:'#D4547A',label:'Rose Gold'},{id:'red',hex:'#CC0000',label:'Kirmizi'},
@@ -134,51 +134,25 @@ function capture() {
 async function processNail(b64) {
   const rv = document.getElementById('result-view');
   rv.style.display = 'block';
-  rv.innerHTML = '<div class="loading"><div class="spinner"></div><h2>AI tirnaklarini boyuyor...</h2><p>5-10 saniye surer</p></div>';
+  rv.innerHTML = '<div class="loading"><div class="spinner"></div><h2>AI tirnaklarini boyuyor...</h2><p>5-15 saniye surer</p></div>';
 
   try {
-    // 1. Upload
-    const bytes = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
-    const upRes = await fetch(API+'/file/nail-vto',{
+    const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnbGJoYXd3enNhcHBjd3N0cmRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MTE4MTksImV4cCI6MjA5MDM4NzgxOX0.a_rwh14WI55SA-Ub1RCAZdxlaJSECkcHZFm6r2uIXrM';
+    const res = await fetch(EDGE_FN, {
       method:'POST',
-      headers:{'Authorization':'Bearer '+API_KEY,'Content-Type':'application/octet-stream'},
-      body: bytes
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+ANON,'apikey':ANON},
+      body: JSON.stringify({imageBase64:b64, color:selColor.hex, texture:selTexture.id})
     });
-    const upData = await upRes.json();
-    if(!upData?.data?.file_id) throw new Error('Yukleme basarisiz');
+    const json = await res.json();
+    if(json.error) throw new Error(json.error);
+    if(!json.result?.url) throw new Error('Sonuc alinamadi');
 
-    // 2. Task
-    const fingers = ['thumb','index','middle','ring','pinky'];
-    const effects = fingers.map(f=>({
-      sub_type:'color', finger:f, color:selColor.hex, texture:selTexture.id,
-      transparency:0, reflection:25, contrast:15, roughness:0
-    }));
-    
-    const taskRes = await fetch(API+'/task/nail-vto',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json'},
-      body: JSON.stringify({version:'1.0',src_file_id:upData.data.file_id,effect_type:'nail_polish',ref_file_ids:[],effects})
-    });
-    const taskData = await taskRes.json();
-    if(!taskData?.data?.task_id) throw new Error('Task olusturulamadi');
-
-    // 3. Poll
-    for(let i=0;i<20;i++){
-      await new Promise(r=>setTimeout(r,2000));
-      const sRes = await fetch(API+'/task/nail-vto/'+taskData.data.task_id,{headers:{'Authorization':'Bearer '+API_KEY}});
-      const sData = await sRes.json();
-      if(sData?.data?.task_status==='success'){
-        rv.innerHTML = '<div class="result"><img src="'+sData.data.results.url+'" /></div>'+
-          '<div class="actions">'+
-          '<button class="btn-outline" onclick="retry()">Tekrar Dene</button>'+
-          '<button class="btn-dark" onclick="bookNow()">Bu Rengi Al &rarr;</button>'+
-          '</div>';
-        if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'result',url:sData.data.results.url}));
-        return;
-      }
-      if(sData?.data?.task_status==='fail') throw new Error(sData.data.error||'El tespit edilemedi');
-    }
-    throw new Error('Zaman asimi');
+    rv.innerHTML = '<div class="result"><img src="'+json.result.url+'" /></div>'+
+      '<div class="actions">'+
+      '<button class="btn-outline" onclick="retry()">Tekrar Dene</button>'+
+      '<button class="btn-dark" onclick="bookNow()">Bu Rengi Al &rarr;</button>'+
+      '</div>';
+    if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'result',url:json.result.url}));
   } catch(e) {
     rv.innerHTML = '<div class="error"><p>'+(e.message||'Hata olustu')+'</p></div>'+
       '<div class="actions"><button class="btn-outline" onclick="retry()">Tekrar Dene</button></div>';
